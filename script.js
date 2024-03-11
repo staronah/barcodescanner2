@@ -1,90 +1,59 @@
-let selectedDeviceId;
+let scanner;
 
-function initializeQuagga() {
-  Quagga.init({
-    inputStream: {
-      name: "Live",
-      type: "LiveStream",
-      target: document.querySelector('#barcodeScanner'),
-      constraints: {
-        deviceId: selectedDeviceId,
-        facingMode: "environment",
-      },
-    },
-    decoder: {
-      readers: ["ean_reader", "ean_8_reader"],
-    },
+function initializeScanner() {
+  const videoElement = document.getElementById('barcodeScanner');
+
+  scanner = new Instascan.Scanner({ video: videoElement });
+  scanner.addListener('scan', function (content) {
+    document.getElementById('textInput').value = content;
+    scanner.stop();
   });
 
-  Quagga.onDetected(function (result) {
-    const barcodeValue = result.codeResult.code;
-    document.getElementById('textInput').value = barcodeValue;
-    Quagga.stop();
-  });
-
-  Quagga.onProcessed(function(result) {
-    const drawingCtx = Quagga.canvas.ctx.overlay;
-    const drawingCanvas = Quagga.canvas.dom.overlay;
-
-    if (result) {
-      if (result.boxes) {
-        drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
-        result.boxes.filter(box => box !== result.box).forEach(box => {
-          Quagga.ImageDebug.drawPath(box, {x: 0, y: 1}, drawingCtx, {color: "orange", lineWidth: 2});
-        });
+  Instascan.Camera.getCameras()
+    .then(function (cameras) {
+      if (cameras.length > 0) {
+        const selectedCameraId = cameras[0].id; // You can choose a different camera if needed
+        scanner.start(cameras.find(camera => camera.id === selectedCameraId));
+      } else {
+        alert('No cameras found.');
       }
-
-      if (result.box) {
-        Quagga.ImageDebug.drawPath(result.box, {x: 0, y: 1}, drawingCtx, {color: "green", lineWidth: 2});
-      }
-
-      if (result.codeResult && result.codeResult.code) {
-        Quagga.stop();
-        document.getElementById('textInput').value = result.codeResult.code;
-      }
-    }
-  });
+    })
+    .catch(function (err) {
+      console.error(err);
+    });
 }
 
 function selectCamera() {
-  Quagga.stop();
-  Quagga.onDetected(null);  // Disable barcode scanning temporarily
+  scanner.stop(); // Stop the scanner temporarily
 
-  Quagga.CameraAccess.enumerateDevices()
-    .then(function(devices) {
-      const cameras = devices.filter(device => device.kind === 'videoinput');
+  Instascan.Camera.getCameras()
+    .then(function (cameras) {
+      if (cameras.length > 0) {
+        const selectedCamera = prompt('Select a camera:\n\n' + cameras.map(camera => camera.name).join('\n'));
 
-      if (cameras.length === 0) {
-        alert('No cameras found.');
-        return;
-      }
-
-      const cameraList = cameras.map((camera, index) => `${index + 1}. ${camera.label || 'Camera ' + (index + 1)}`).join('\n');
-      const selectionPrompt = `Select a camera:\n\n${cameraList}`;
-      const selectedCameraIndex = prompt(selectionPrompt, 1);
-
-      if (selectedCameraIndex !== null) {
-        const index = parseInt(selectedCameraIndex) - 1;
-
-        if (cameras[index]) {
-          selectedDeviceId = cameras[index].deviceId;
+        if (selectedCamera) {
+          const camera = cameras.find(c => c.name === selectedCamera);
+          if (camera) {
+            scanner.start(camera);
+          } else {
+            alert('Invalid camera selection. Defaulting to the first camera.');
+            scanner.start(cameras[0]);
+          }
         } else {
           alert('Invalid camera selection. Defaulting to the first camera.');
-          selectedDeviceId = cameras[0].deviceId;
+          scanner.start(cameras[0]);
         }
+      } else {
+        alert('No cameras found.');
       }
-
-      initializeQuagga();
-      Quagga.start();
     })
-    .catch(function(err) {
+    .catch(function (err) {
       console.error(err);
     });
 }
 
 // Start with default camera
-initializeQuagga();
-Quagga.start();
+initializeScanner();
 
 function convertToExcel() {
   const textInput = document.getElementById('textInput').value;
